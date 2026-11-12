@@ -13,7 +13,15 @@ const pacienteRoutes = require('./routes/paciente.routes');
 const notificacionRoutes = require('./routes/notificacion.routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
+const { opcionesCors } = require('./config/cors');
+
 const app = express();
+
+// En Render la app está detrás de un proxy: así el límite de peticiones
+// usa la IP real del usuario y no la del proxy.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+}
 
 app.use(helmet());
 
@@ -23,9 +31,9 @@ if (!process.env.CORS_ORIGIN) {
       'y el navegador bloqueará todas las peticiones cross-origin del frontend.'
   );
 }
-app.use(cors({ origin: process.env.CORS_ORIGIN }));
+app.use(cors(opcionesCors));
 app.use(express.json());
-app.use(morgan('dev'));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
 app.use('/api', apiLimiter);

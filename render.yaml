@@ -1,0 +1,42 @@
+# Blueprint de Render para el backend de MedGo (Node.js + Express + Socket.io).
+# Render > New > Blueprint > elegir este repositorio. Las variables con sync: false
+# se completan a mano en el panel de Render (no se guardan en el repositorio).
+services:
+  - type: web
+    name: medgo-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci && npm run migrate
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DATABASE_URL
+        sync: false # cadena "Session pooler" de Supabase
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGIN
+        sync: false # URL del frontend en Vercel, ej. https://medgo.vercel.app
+      - key: CORS_PERMITIR_PREVIEWS_VERCEL
+        value: "false"
+      - key: VERCEL_PROYECTO
+        sync: false # nombre del proyecto en Vercel (solo si activas las vistas previas)
+      - key: RADIO_LLEGADA_METROS
+        value: "50"
+      - key: TZ_APP
+        value: America/Lima
+      - key: BACKUP_INTERVALO_HORAS
+        value: "24"
+      - key: BACKUP_RETENER
+        value: "14"
+      - key: MINUTOS_AVISO_SIN_MEDICO
+        value: "10"

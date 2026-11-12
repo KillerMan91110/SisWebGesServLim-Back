@@ -11,8 +11,10 @@ const { programarRecordatorios } = require('./services/recordatorio.service');
 
 const server = http.createServer(app);
 
+const { opcionesCors } = require('./config/cors');
+
 const io = new Server(server, {
-  cors: { origin: process.env.CORS_ORIGIN },
+  cors: opcionesCors,
 });
 
 app.set('io', io);
