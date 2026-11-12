@@ -7,6 +7,7 @@ const { parseId } = require('../utils/parseId');
 const { puedeAccederSolicitud } = require('../utils/autorizacion');
 const fichaModel = require('../models/fichaClinica.model');
 const perfilMedicoModel = require('../models/perfilMedico.model');
+const avisos = require('../services/avisos.service');
 const auditoriaModel = require('../models/auditoria.model');
 
 const MINUTOS_ANTICIPACION = 30;
@@ -129,6 +130,7 @@ async function aceptar(req, res, next) {
       io.to(`user:${solicitud.paciente_id}`).emit('solicitud:actualizada', solicitud);
       io.to('medicos').emit('solicitud:tomada', { id: solicitud.id });
     }
+    avisos.alAceptar(solicitud);
     res.json({ solicitud });
   } catch (err) {
     next(err);
@@ -150,6 +152,7 @@ async function cancelar(req, res, next) {
         io.to(`user:${solicitud.medico_id}`).emit('solicitud:actualizada', solicitud);
       }
     }
+    avisos.alCancelarPorPaciente(solicitud);
     res.json({ solicitud });
   } catch (err) {
     next(err);
@@ -190,6 +193,31 @@ async function finalizar(req, res, next) {
       io.to(`solicitud:${solicitud.id}`).emit('solicitud:actualizada', solicitud);
       io.to(`user:${solicitud.paciente_id}`).emit('solicitud:actualizada', solicitud);
     }
+    avisos.alFinalizar(solicitud);
+    res.json({ solicitud });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Consultorio: el médico registra que el paciente llegó (pasa a "en atención").
+async function registrarLlegada(req, res, next) {
+  try {
+    const id = parseId(req.params.id);
+    if (id === null) return res.status(400).json({ error: 'id inválido' });
+    const solicitud = await solicitudModel.registrarLlegadaConsultorio({
+      solicitudId: id,
+      medicoId: req.user.id,
+    });
+    if (!solicitud) {
+      return res.status(409).json({ error: 'Solo se puede registrar la llegada de una atención aceptada en consultorio' });
+    }
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`solicitud:${solicitud.id}`).emit('solicitud:actualizada', solicitud);
+      io.to(`user:${solicitud.paciente_id}`).emit('solicitud:actualizada', solicitud);
+    }
+    avisos.alCambiarEstado(solicitud, 'en_atencion');
     res.json({ solicitud });
   } catch (err) {
     next(err);
@@ -280,6 +308,7 @@ async function historialClinico(req, res, next) {
 }
 
 module.exports = {
+  registrarLlegada,
   listarAgenda,
   historialClinico,
   crear,

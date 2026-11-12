@@ -3,6 +3,7 @@ const usuarioModel = require('../models/usuario.model');
 const solicitudModel = require('../models/solicitud.model');
 const mensajeModel = require('../models/mensaje.model');
 const { esParteDeSolicitud } = require('../utils/autorizacion');
+const avisos = require('../services/avisos.service');
 
 const radioEnv = Number(process.env.RADIO_LLEGADA_METROS);
 const RADIO_LLEGADA_METROS = Number.isFinite(radioEnv) ? radioEnv : 50;
@@ -91,6 +92,7 @@ function registerSockets(io) {
         if (cambioEstado) {
           io.to(`user:${solicitud.paciente_id}`).emit('solicitud:actualizada', solicitud);
           io.to(`user:${solicitud.medico_id}`).emit('solicitud:actualizada', solicitud);
+          avisos.alCambiarEstado(solicitud, solicitud.estado);
         }
         safeCallback(callback, { ok: true, distanciaMetros: Math.round(distancia), estado: solicitud.estado });
       } catch (err) {

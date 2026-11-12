@@ -19,6 +19,7 @@ const TABLAS = [
   'mensajes',
   'calificaciones',
   'auditoria_accesos',
+  'notificaciones',
 ];
 
 const NOMBRE_VALIDO = /^respaldo-\d{8}-\d{6}(-[a-z]+)?\.json$/;

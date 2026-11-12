@@ -154,7 +154,12 @@ async function actualizarUbicacionMedico({ medicoId, solicitudId, lat, lng, radi
       [solicitudId, medicoId]
     );
     const solicitudActual = rows[0];
-    if (!solicitudActual || !['aceptada', 'en_camino'].includes(solicitudActual.estado)) {
+    // En consultorio el médico no se desplaza: la llegada se registra con un botón.
+    if (
+      !solicitudActual ||
+      solicitudActual.modalidad === 'consultorio' ||
+      !['aceptada', 'en_camino'].includes(solicitudActual.estado)
+    ) {
       return null;
     }
 
@@ -231,7 +236,26 @@ async function finalizar({ solicitudId, medicoId, reporte }) {
   });
 }
 
+async function registrarLlegadaConsultorio({ solicitudId, medicoId }) {
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `UPDATE solicitudes_atencion SET estado = 'en_atencion'
+       WHERE id = $1 AND medico_id = $2 AND modalidad = 'consultorio' AND estado = 'aceptada'
+       RETURNING *`,
+      [solicitudId, medicoId]
+    );
+    if (rows.length === 0) return null;
+    await client.query(
+      `INSERT INTO historial_estados_solicitud (solicitud_id, estado_anterior, estado_nuevo, cambiado_por)
+       VALUES ($1, 'aceptada', 'en_atencion', $2)`,
+      [solicitudId, medicoId]
+    );
+    return rows[0];
+  });
+}
+
 module.exports = {
+  registrarLlegadaConsultorio,
   crear,
   findById,
   listarPorPaciente,

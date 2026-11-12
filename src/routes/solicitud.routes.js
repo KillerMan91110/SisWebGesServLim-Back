@@ -16,6 +16,7 @@ router.get('/solicitudes/:id/mensajes', solicitudController.listarMensajes);
 router.post('/solicitudes/:id/aceptar', authorize('medico'), solicitudController.aceptar);
 router.patch('/solicitudes/:id/cancelar', authorize('paciente'), solicitudController.cancelar);
 router.post('/solicitudes/:id/finalizar', authorize('medico'), solicitudController.finalizar);
+router.post('/solicitudes/:id/llegada', authorize('medico'), solicitudController.registrarLlegada);
 router.get('/solicitudes/:id/reporte', solicitudController.obtenerReporte);
 router.get('/solicitudes/:id/historial-clinico', solicitudController.historialClinico);
 router.post('/solicitudes/:id/calificar', authorize('paciente'), solicitudController.calificar);

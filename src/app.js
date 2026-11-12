@@ -10,6 +10,7 @@ const adminRoutes = require('./routes/admin.routes');
 const solicitudRoutes = require('./routes/solicitud.routes');
 const medicoRoutes = require('./routes/medico.routes');
 const pacienteRoutes = require('./routes/paciente.routes');
+const notificacionRoutes = require('./routes/notificacion.routes');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -35,6 +36,7 @@ app.use('/api', adminRoutes);
 app.use('/api', solicitudRoutes);
 app.use('/api', medicoRoutes);
 app.use('/api', pacienteRoutes);
+app.use('/api', notificacionRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
