@@ -20,5 +20,6 @@ router.post('/auth/login', loginLimiter, authController.login);
 router.get('/auth/me', authenticate, authController.me);
 router.patch('/auth/me', authenticate, authController.actualizarPerfil);
 router.patch('/auth/me/password', authenticate, authController.cambiarPassword);
+router.post('/auth/me/consentimiento', authenticate, authController.aceptarConsentimiento);
 
 module.exports = router;

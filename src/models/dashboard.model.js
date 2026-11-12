@@ -170,7 +170,54 @@ async function listarParaExportar({ desde, hasta }) {
   return rows;
 }
 
+async function listarSolicitudesAdmin({ estado, modalidad, tipo, medicoId, desde, hasta, q, pagina, porPagina }) {
+  const condiciones = [];
+  const params = [];
+  const agregar = (sql, valor) => {
+    params.push(valor);
+    condiciones.push(sql.replace('?', `$${params.length}`));
+  };
+  if (estado) agregar('s.estado = ?', estado);
+  if (modalidad) agregar('s.modalidad = ?', modalidad);
+  if (tipo) agregar('s.tipo_procedimiento = ?', tipo);
+  if (medicoId) agregar('s.medico_id = ?', medicoId);
+  if (desde) agregar('s.creado_en >= ?', desde);
+  if (hasta) agregar("s.creado_en < (?::date + interval '1 day')", hasta);
+  if (q) {
+    // Busca por nombre de paciente o médico; si es un número, también por N.° de solicitud
+    params.push(`%${q}%`);
+    const n = params.length;
+    let cond = `(p.nombre ILIKE $${n} OR m.nombre ILIKE $${n}`;
+    if (/^\d+$/.test(q)) {
+      params.push(Number(q));
+      cond += ` OR s.id = $${params.length}`;
+    }
+    condiciones.push(`${cond})`);
+  }
+  const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const paramsBase = params;
+
+  const desdeTabla = `FROM solicitudes_atencion s
+     JOIN usuarios p ON p.id = s.paciente_id
+     LEFT JOIN usuarios m ON m.id = s.medico_id
+     LEFT JOIN calificaciones c ON c.solicitud_id = s.id
+     ${where}`;
+  const { rows: total } = await pool.query(`SELECT COUNT(*)::int AS total ${desdeTabla}`, paramsBase);
+  const offset = (pagina - 1) * porPagina;
+  const { rows } = await pool.query(
+    `SELECT s.id, s.tipo_procedimiento, s.modalidad, s.estado, s.programada_para, s.creado_en,
+            s.aceptada_en, s.finalizado_en, p.nombre AS paciente_nombre, m.nombre AS medico_nombre,
+            c.puntaje
+     ${desdeTabla}
+     ORDER BY s.creado_en DESC
+     LIMIT ${Number(porPagina)} OFFSET ${Number(offset)}`,
+    paramsBase
+  );
+  return { solicitudes: rows, total: total[0].total };
+}
+
 module.exports = {
+  listarSolicitudesAdmin,
   obtenerResumen,
   obtenerSolicitudesPorDia,
   obtenerPorTipo,

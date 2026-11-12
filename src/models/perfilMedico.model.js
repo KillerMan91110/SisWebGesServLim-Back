@@ -66,4 +66,27 @@ async function rechazar(usuarioId) {
   });
 }
 
-module.exports = { listarPendientes, listarVerificadosPublico, obtenerPorUsuarioId, verificar, rechazar };
+// Médicos verificados, activos y en línea cerca de un punto. La ubicación se redondea
+// (~100 m) para no exponer la posición exacta del profesional.
+async function listarCercanos({ lat, lng, radioMetros }) {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.nombre, pm.especialidad, pm.direccion_consultorio,
+            ROUND(pm.lat_actual::numeric, 3)::float AS lat,
+            ROUND(pm.lng_actual::numeric, 3)::float AS lng,
+            ROUND(earth_distance(ll_to_earth(pm.lat_actual, pm.lng_actual), ll_to_earth($1, $2))) AS distancia_metros,
+            (SELECT ROUND(AVG(c.puntaje), 1) FROM calificaciones c WHERE c.medico_id = u.id) AS satisfaccion,
+            (SELECT COUNT(*) FROM solicitudes_atencion s WHERE s.medico_id = u.id AND s.estado = 'finalizada') AS atenciones
+     FROM perfiles_medicos pm
+     JOIN usuarios u ON u.id = pm.usuario_id
+     WHERE pm.verificado = true AND u.activo = true AND pm.disponible = true
+       AND pm.lat_actual IS NOT NULL AND pm.lng_actual IS NOT NULL
+       AND earth_distance(ll_to_earth(pm.lat_actual, pm.lng_actual), ll_to_earth($1, $2)) <= $3
+     ORDER BY distancia_metros ASC
+     LIMIT 30`,
+    [lat, lng, radioMetros]
+  );
+  return rows;
+}
+
+module.exports = {
+  listarCercanos, listarPendientes, listarVerificadosPublico, obtenerPorUsuarioId, verificar, rechazar };

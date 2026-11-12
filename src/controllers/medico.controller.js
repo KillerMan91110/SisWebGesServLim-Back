@@ -76,4 +76,20 @@ async function actualizarConsultorio(req, res, next) {
   }
 }
 
-module.exports = { actualizarDisponibilidad, listarPublicos, obtenerPerfil, actualizarConsultorio };
+const cercanosSchema = z.object({
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+  radio: z.coerce.number().positive().max(50000).optional().default(10000),
+});
+
+async function listarCercanos(req, res, next) {
+  try {
+    const { lat, lng, radio } = cercanosSchema.parse(req.query);
+    const medicos = await perfilMedicoModel.listarCercanos({ lat, lng, radioMetros: radio });
+    res.json({ medicos });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listarCercanos, actualizarDisponibilidad, listarPublicos, obtenerPerfil, actualizarConsultorio };

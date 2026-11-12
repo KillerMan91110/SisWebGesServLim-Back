@@ -14,6 +14,7 @@ router.patch(
   medicoController.actualizarDisponibilidad
 );
 
+router.get('/medicos/cercanos', authenticate, authorize('paciente', 'admin'), medicoController.listarCercanos);
 router.get('/medicos/perfil', authenticate, authorize('medico'), medicoController.obtenerPerfil);
 router.patch(
   '/medicos/perfil/consultorio',

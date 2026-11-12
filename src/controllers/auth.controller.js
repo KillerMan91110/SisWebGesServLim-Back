@@ -3,11 +3,17 @@ const jwt = require('jsonwebtoken');
 const { z } = require('zod');
 const usuarioModel = require('../models/usuario.model');
 
+// Versión vigente de la política de privacidad que el usuario acepta.
+const VERSION_PRIVACIDAD = 'v1-2026';
+
 const registroPacienteSchema = z.object({
   nombre: z.string().min(2).max(150),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8),
   telefono: z.string().max(20).optional(),
+  aceptaPrivacidad: z.literal(true, {
+    message: 'Debes aceptar la política de privacidad y el tratamiento de tus datos de salud',
+  }),
 });
 
 const registroMedicoSchema = registroPacienteSchema.extend({
@@ -39,7 +45,7 @@ async function registrarPaciente(req, res, next) {
       return res.status(409).json({ error: 'El email ya está registrado' });
     }
     const passwordHash = await bcrypt.hash(datos.password, 10);
-    const usuario = await usuarioModel.crearPaciente({ ...datos, passwordHash });
+    const usuario = await usuarioModel.crearPaciente({ ...datos, passwordHash, versionPrivacidad: VERSION_PRIVACIDAD });
     const token = firmarToken(usuario);
     res.status(201).json({ usuario, token });
   } catch (err) {
@@ -55,7 +61,7 @@ async function registrarMedico(req, res, next) {
       return res.status(409).json({ error: 'El email ya está registrado' });
     }
     const passwordHash = await bcrypt.hash(datos.password, 10);
-    const usuario = await usuarioModel.crearMedico({ ...datos, passwordHash });
+    const usuario = await usuarioModel.crearMedico({ ...datos, passwordHash, versionPrivacidad: VERSION_PRIVACIDAD });
     res.status(201).json({
       usuario,
       mensaje: 'Registro exitoso. Tu cuenta quedará activa cuando el administrador verifique tu colegiatura.',
@@ -132,7 +138,19 @@ async function cambiarPassword(req, res, next) {
   }
 }
 
+// Usuarios registrados antes de existir el consentimiento lo aceptan al iniciar sesión.
+async function aceptarConsentimiento(req, res, next) {
+  try {
+    z.object({ aceptaPrivacidad: z.literal(true) }).parse(req.body);
+    const usuario = await usuarioModel.registrarConsentimiento(req.user.id, VERSION_PRIVACIDAD);
+    res.json({ usuario: serializarUsuario(usuario) });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  aceptarConsentimiento,
   registrarPaciente,
   registrarMedico,
   login,

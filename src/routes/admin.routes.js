@@ -13,6 +13,7 @@ router.patch('/admin/usuarios/:id/estado', adminController.actualizarEstadoUsuar
 router.get('/admin/dashboard', adminController.obtenerDashboard);
 router.get('/admin/reportes/solicitudes.csv', adminController.exportarSolicitudesCsv);
 
+router.get('/admin/solicitudes', adminController.listarSolicitudes);
 router.get('/admin/auditoria', adminController.listarAuditoria);
 router.get('/admin/respaldos', adminController.listarRespaldos);
 router.post('/admin/respaldos', adminController.crearRespaldo);

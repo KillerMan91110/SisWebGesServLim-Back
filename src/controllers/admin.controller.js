@@ -179,6 +179,30 @@ async function exportarSolicitudesCsv(req, res, next) {
   }
 }
 
+const listarSolicitudesSchema = z.object({
+  estado: z.enum(['pendiente', 'aceptada', 'en_camino', 'en_atencion', 'finalizada', 'cancelada']).optional(),
+  modalidad: z.enum(['domicilio', 'consultorio']).optional(),
+  tipo: z.string().max(100).optional(),
+  medicoId: z.coerce.number().int().positive().optional(),
+  desde: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  hasta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  q: z.string().trim().max(100).optional(),
+  pagina: z.coerce.number().int().min(1).optional().default(1),
+  porPagina: z.coerce.number().int().min(5).max(100).optional().default(15),
+});
+
+async function listarSolicitudes(req, res, next) {
+  try {
+    const filtros = listarSolicitudesSchema.parse(
+      Object.fromEntries(Object.entries(req.query).filter(([, v]) => v !== ''))
+    );
+    const resultado = await dashboardModel.listarSolicitudesAdmin(filtros);
+    res.json({ ...resultado, pagina: filtros.pagina, porPagina: filtros.porPagina });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function listarAuditoria(req, res, next) {
   try {
     const registros = await auditoriaModel.listar(100);
@@ -226,6 +250,7 @@ async function descargarRespaldo(req, res, next) {
 }
 
 module.exports = {
+  listarSolicitudes,
   listarAuditoria,
   listarRespaldos,
   crearRespaldo,

@@ -11,23 +11,23 @@ async function findById(id) {
   return rows[0] || null;
 }
 
-async function crearPaciente({ nombre, email, passwordHash, telefono }) {
+async function crearPaciente({ nombre, email, passwordHash, telefono, versionPrivacidad }) {
   const { rows } = await pool.query(
-    `INSERT INTO usuarios (nombre, email, password_hash, rol, telefono)
-     VALUES ($1, $2, $3, 'paciente', $4)
-     RETURNING id, nombre, email, rol, telefono, activo, creado_en`,
-    [nombre, email, passwordHash, telefono || null]
+    `INSERT INTO usuarios (nombre, email, password_hash, rol, telefono, consentimiento_datos_en, consentimiento_version)
+     VALUES ($1, $2, $3, 'paciente', $4, now(), $5)
+     RETURNING id, nombre, email, rol, telefono, activo, creado_en, consentimiento_datos_en, consentimiento_version`,
+    [nombre, email, passwordHash, telefono || null, versionPrivacidad]
   );
   return rows[0];
 }
 
-async function crearMedico({ nombre, email, passwordHash, telefono, cmpColegiatura, especialidad }) {
+async function crearMedico({ nombre, email, passwordHash, telefono, cmpColegiatura, especialidad, versionPrivacidad }) {
   return withTransaction(async (client) => {
     const { rows: usuarioRows } = await client.query(
-      `INSERT INTO usuarios (nombre, email, password_hash, rol, telefono, activo)
-       VALUES ($1, $2, $3, 'medico', $4, false)
-       RETURNING id, nombre, email, rol, telefono, activo, creado_en`,
-      [nombre, email, passwordHash, telefono || null]
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, telefono, activo, consentimiento_datos_en, consentimiento_version)
+       VALUES ($1, $2, $3, 'medico', $4, false, now(), $5)
+       RETURNING id, nombre, email, rol, telefono, activo, creado_en, consentimiento_datos_en, consentimiento_version`,
+      [nombre, email, passwordHash, telefono || null, versionPrivacidad]
     );
     const usuario = usuarioRows[0];
     await client.query(
@@ -41,7 +41,7 @@ async function crearMedico({ nombre, email, passwordHash, telefono, cmpColegiatu
 
 async function listarTodos({ rol } = {}) {
   const params = [];
-  let query = 'SELECT id, nombre, email, rol, telefono, activo, creado_en FROM usuarios';
+  let query = 'SELECT id, nombre, email, rol, telefono, activo, creado_en, consentimiento_datos_en FROM usuarios';
   if (rol) {
     params.push(rol);
     query += ` WHERE rol = $${params.length}`;
@@ -78,7 +78,17 @@ async function actualizarPassword(id, passwordHash) {
   ]);
 }
 
+async function registrarConsentimiento(id, version) {
+  const { rows } = await pool.query(
+    `UPDATE usuarios SET consentimiento_datos_en = now(), consentimiento_version = $2, actualizado_en = now()
+     WHERE id = $1 RETURNING *`,
+    [id, version]
+  );
+  return rows[0] || null;
+}
+
 module.exports = {
+  registrarConsentimiento,
   findByEmail,
   findById,
   crearPaciente,
