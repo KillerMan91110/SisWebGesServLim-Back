@@ -49,9 +49,11 @@ async function findById(id) {
 
 async function listarPorPaciente(pacienteId) {
   const { rows } = await pool.query(
-    `SELECT s.*, m.nombre AS medico_nombre
+    `SELECT s.*, m.nombre AS medico_nombre,
+            pm.direccion_consultorio AS medico_direccion_consultorio
      FROM solicitudes_atencion s
      LEFT JOIN usuarios m ON m.id = s.medico_id
+     LEFT JOIN perfiles_medicos pm ON pm.usuario_id = s.medico_id
      WHERE s.paciente_id = $1
      ORDER BY s.creado_en DESC`,
     [pacienteId]

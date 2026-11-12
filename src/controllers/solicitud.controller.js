@@ -6,6 +6,7 @@ const calificacionModel = require('../models/calificacion.model');
 const { parseId } = require('../utils/parseId');
 const { puedeAccederSolicitud } = require('../utils/autorizacion');
 const fichaModel = require('../models/fichaClinica.model');
+const perfilMedicoModel = require('../models/perfilMedico.model');
 const auditoriaModel = require('../models/auditoria.model');
 
 const MINUTOS_ANTICIPACION = 30;
@@ -110,6 +111,15 @@ async function aceptar(req, res, next) {
   try {
     const id = parseId(req.params.id);
     if (id === null) return res.status(400).json({ error: 'id inválido' });
+    const previa = await solicitudModel.findById(id);
+    if (previa?.modalidad === 'consultorio') {
+      const perfil = await perfilMedicoModel.obtenerPorUsuarioId(req.user.id);
+      if (!perfil?.direccion_consultorio) {
+        return res.status(409).json({
+          error: 'Registra la dirección de tu consultorio en tu panel antes de aceptar atenciones en consultorio.',
+        });
+      }
+    }
     const solicitud = await solicitudModel.aceptar({ solicitudId: id, medicoId: req.user.id });
     if (!solicitud) {
       return res.status(409).json({ error: 'La solicitud ya no está disponible' });
