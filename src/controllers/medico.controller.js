@@ -45,7 +45,8 @@ async function actualizarDisponibilidad(req, res, next) {
 async function obtenerPerfil(req, res, next) {
   try {
     const { rows } = await pool.query(
-      `SELECT usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio
+      `SELECT usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio,
+              lat_actual, lng_actual
        FROM perfiles_medicos WHERE usuario_id = $1`,
       [req.user.id]
     );
