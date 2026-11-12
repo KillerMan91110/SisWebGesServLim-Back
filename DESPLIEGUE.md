@@ -25,7 +25,20 @@ Orden: **1) Supabase → 2) Render → 3) Vercel → 4) volver a Render para el 
    las extensiones `cube` y `earthdistance`. Si alguna vez da error de extensiones, actívalas en
    **Database → Extensions**.
 
-### 1.1 Crear las tablas y el administrador (desde tu PC)
+### 1.1 Crear las tablas — Opción rápida: SQL Editor de Supabase
+
+1. Abre `supabase/schema.sql` de este repositorio y copia **todo** su contenido.
+2. En Supabase: **SQL Editor → New query** → pega → **Run**. Debe decir *Success. No rows returned*.
+3. Verifica en **Table Editor** que aparecen 11 tablas (usuarios, solicitudes_atencion, etc.).
+
+El script crea las extensiones, todas las tablas, activa **Row Level Security** (para que la API
+pública de Supabase no exponga datos) y registra las migraciones, así el `npm run migrate` de
+Render no intentará crearlas otra vez. Ejecútalo **una sola vez** y en una base vacía.
+Si agregas una migración nueva, regenera el archivo con `npm run schema:supabase`.
+
+Después crea el administrador con `npm run seed:admin` (abajo) o con el bloque opcional al final del script.
+
+### 1.1 (alternativa) Crear las tablas y el administrador desde tu PC
 
 En PowerShell, dentro de `D:\Tesis\Back` (la variable solo vive en esa ventana):
 
