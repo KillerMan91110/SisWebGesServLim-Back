@@ -1,7 +1,7 @@
 // Tareas periódicas (cada minuto): recordatorios de citas, aviso cuando nadie
 // acepta una atención inmediata y cancelación de citas vencidas sin médico.
 const pool = require('../config/db');
-const { notificarSeguro, fechaLegible, lugar, getIo } = require('./notificacion.service');
+const { notificarSeguro, fechaLegible, lugar, procedimiento, getIo } = require('./notificacion.service');
 
 const MINUTOS_SIN_MEDICO = Number(process.env.MINUTOS_AVISO_SIN_MEDICO) || 10;
 
@@ -39,17 +39,17 @@ async function recordatorios24h() {
     await notificarSeguro({
       usuarioId: c.paciente_id,
       tipo: 'recordatorio',
-      titulo: '⏰ Recordatorio de cita',
-      mensaje: `Tienes una cita de ${c.tipo_procedimiento} el ${cuando} con ${c.medico_nombre}, ${lugar(c)}.`,
+      titulo: '⏰ Recordatorio de tu cita',
+      mensaje: `Te atenderá ${c.medico_nombre} el ${cuando} (${procedimiento(c)}), ${lugar(c)}.`,
       solicitudId: c.id,
     });
     await notificarSeguro({
       usuarioId: c.medico_id,
       tipo: 'recordatorio',
-      titulo: '⏰ Recordatorio de cita',
-      mensaje: `Tienes una cita de ${c.tipo_procedimiento} el ${cuando} con ${c.paciente_nombre} (${
-        c.modalidad === 'consultorio' ? 'en tu consultorio' : 'a domicilio'
-      }).`,
+      titulo: '⏰ Paciente agendado',
+      mensaje: `Atenderás a ${c.paciente_nombre} el ${cuando} (${procedimiento(c)}), ${
+        c.modalidad === 'consultorio' ? 'en tu consultorio' : 'en su domicilio'
+      }.`,
       solicitudId: c.id,
     });
   }
@@ -72,16 +72,16 @@ async function recordatorios1h() {
       usuarioId: c.paciente_id,
       tipo: 'cita_pronto',
       titulo: '🔔 Tu cita comienza pronto',
-      mensaje: `${c.tipo_procedimiento} con ${c.medico_nombre} a las ${hora}, ${lugar(c)}.`,
+      mensaje: `${c.medico_nombre} te atenderá a las ${hora} (${procedimiento(c)}), ${lugar(c)}.`,
       solicitudId: c.id,
     });
     await notificarSeguro({
       usuarioId: c.medico_id,
       tipo: 'cita_pronto',
-      titulo: '🔔 Tu cita comienza pronto',
-      mensaje: `${c.tipo_procedimiento} con ${c.paciente_nombre} a las ${hora} (${
-        c.modalidad === 'consultorio' ? 'en tu consultorio' : 'a domicilio'
-      }).`,
+      titulo: '🔔 Tu próximo paciente',
+      mensaje: `${c.paciente_nombre} tiene cita contigo a las ${hora} (${procedimiento(c)}), ${
+        c.modalidad === 'consultorio' ? 'en tu consultorio' : 'en su domicilio'
+      }.`,
       solicitudId: c.id,
     });
   }
@@ -98,7 +98,7 @@ async function avisoSinMedico() {
       usuarioId: s.paciente_id,
       tipo: 'sin_medico',
       titulo: '⏳ Aún buscamos un médico',
-      mensaje: `Tu solicitud de ${s.tipo_procedimiento} sigue pendiente. Si prefieres, cancélala y programa una cita para otro momento.`,
+      mensaje: `Tu solicitud de ${procedimiento(s)} sigue pendiente. Si prefieres, cancélala y programa una cita para otro momento.`,
       solicitudId: s.id,
     });
   }
@@ -124,7 +124,7 @@ async function cancelarCitasVencidas() {
       usuarioId: s.paciente_id,
       tipo: 'cita_vencida',
       titulo: '❌ Cita cancelada',
-      mensaje: `Ningún médico aceptó tu cita de ${s.tipo_procedimiento} del ${fechaLegible(
+      mensaje: `Ningún médico aceptó tu cita de ${procedimiento(s)} del ${fechaLegible(
         s.programada_para
       )}, por lo que se canceló. Puedes programar una nueva.`,
       solicitudId: s.id,

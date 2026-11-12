@@ -1,6 +1,6 @@
 // Avisos que el sistema envía en cada momento del ciclo de una solicitud.
 const solicitudModel = require('../models/solicitud.model');
-const { notificarSeguro, fechaLegible, lugar } = require('./notificacion.service');
+const { notificarSeguro, fechaLegible, lugar, procedimiento } = require('./notificacion.service');
 
 async function completa(solicitudOId) {
   const id = typeof solicitudOId === 'object' ? solicitudOId.id : solicitudOId;
@@ -16,7 +16,7 @@ async function alAceptar(solicitudOId) {
       usuarioId: s.paciente_id,
       tipo: 'cita_confirmada',
       titulo: '📅 Cita confirmada',
-      mensaje: `Tu cita de ${s.tipo_procedimiento} del ${fechaLegible(s.programada_para)} fue confirmada con ${medico}, ${lugar(s)}.`,
+      mensaje: `Tu cita de ${procedimiento(s)} del ${fechaLegible(s.programada_para)} fue confirmada con ${medico}, ${lugar(s)}.`,
       solicitudId: s.id,
     });
   } else if (s.modalidad === 'consultorio') {
@@ -24,7 +24,7 @@ async function alAceptar(solicitudOId) {
       usuarioId: s.paciente_id,
       tipo: 'aceptada',
       titulo: '🏥 Te esperan en el consultorio',
-      mensaje: `${medico} aceptó tu solicitud de ${s.tipo_procedimiento}. Acércate ${lugar(s)}.`,
+      mensaje: `${medico} aceptó tu solicitud de ${procedimiento(s)}. Acércate ${lugar(s)}.`,
       solicitudId: s.id,
     });
   } else {
@@ -32,7 +32,7 @@ async function alAceptar(solicitudOId) {
       usuarioId: s.paciente_id,
       tipo: 'aceptada',
       titulo: '🩺 Tu solicitud fue aceptada',
-      mensaje: `${medico} aceptó tu solicitud de ${s.tipo_procedimiento} y se dirigirá a tu domicilio.`,
+      mensaje: `${medico} aceptó tu solicitud de ${procedimiento(s)} y se dirigirá a tu domicilio.`,
       solicitudId: s.id,
     });
   }
@@ -45,7 +45,7 @@ async function alCancelarPorPaciente(solicitudOId) {
     usuarioId: s.medico_id,
     tipo: 'cancelada',
     titulo: '🚫 Solicitud cancelada',
-    mensaje: `${s.paciente_nombre} canceló la solicitud de ${s.tipo_procedimiento}${
+    mensaje: `${s.paciente_nombre} canceló la solicitud de ${procedimiento(s)}${
       s.programada_para ? ` programada para el ${fechaLegible(s.programada_para)}` : ''
     }.`,
     solicitudId: s.id,
@@ -59,7 +59,7 @@ async function alFinalizar(solicitudOId) {
     usuarioId: s.paciente_id,
     tipo: 'finalizada',
     titulo: '✅ Atención finalizada',
-    mensaje: `${s.medico_nombre} finalizó tu atención de ${s.tipo_procedimiento}. Revisa el reporte y califica el servicio.`,
+    mensaje: `${s.medico_nombre} finalizó tu atención de ${procedimiento(s)}. Revisa el reporte y califica el servicio.`,
     solicitudId: s.id,
   });
 }

@@ -72,6 +72,11 @@ function fechaLegible(fecha) {
   });
 }
 
+// "Otro" no se lee bien en una frase ("cita de Otro"): se usa un nombre genérico.
+function procedimiento(solicitud) {
+  return solicitud.tipo_procedimiento === 'Otro' ? 'atención médica' : solicitud.tipo_procedimiento;
+}
+
 function lugar(solicitud) {
   if (solicitud.modalidad === 'consultorio') {
     return solicitud.medico_direccion_consultorio
@@ -91,4 +96,5 @@ module.exports = {
   marcarTodasLeidas,
   fechaLegible,
   lugar,
+  procedimiento,
 };
