@@ -4,6 +4,7 @@ const solicitudModel = require('../models/solicitud.model');
 const mensajeModel = require('../models/mensaje.model');
 const { esParteDeSolicitud } = require('../utils/autorizacion');
 const avisos = require('../services/avisos.service');
+const auditoriaModel = require('../models/auditoria.model');
 
 const radioEnv = Number(process.env.RADIO_LLEGADA_METROS);
 const RADIO_LLEGADA_METROS = Number.isFinite(radioEnv) ? radioEnv : 50;
@@ -37,7 +38,7 @@ function registerSockets(io) {
       if (!usuario || !usuario.activo) {
         return next(new Error('Cuenta inactiva o no encontrada'));
       }
-      socket.user = { id: usuario.id, rol: usuario.rol };
+      socket.user = { id: usuario.id, rol: usuario.rol, nombre: usuario.nombre };
       next();
     } catch (err) {
       next(err);
@@ -51,15 +52,27 @@ function registerSockets(io) {
       socket.join('medicos');
     }
 
-    // Une al socket a la sala de una solicitud puntual (tracking + chat), solo si es parte
+    // Une al socket a la sala de una solicitud puntual (tracking + chat).
+    // Paciente y médico participan; el admin entra en modo supervisión (solo lectura) y queda auditado.
     socket.on('solicitud:unirse', async (solicitudId, callback) => {
       try {
         const solicitud = await solicitudModel.findById(Number(solicitudId));
-        if (!esParteDeSolicitud(solicitud, id)) {
+        const esAdmin = rol === 'admin' && Boolean(solicitud);
+        if (!esParteDeSolicitud(solicitud, id) && !esAdmin) {
           return safeCallback(callback, { error: 'No autorizado' });
         }
         socket.join(`solicitud:${solicitud.id}`);
-        safeCallback(callback, { ok: true });
+        if (esAdmin) {
+          auditoriaModel
+            .registrar({
+              usuarioId: id,
+              accion: 'supervisar_chat',
+              pacienteId: solicitud.paciente_id,
+              solicitudId: solicitud.id,
+            })
+            .catch(() => {});
+        }
+        safeCallback(callback, { ok: true, supervision: esAdmin && !esParteDeSolicitud(solicitud, id) });
       } catch (err) {
         safeCallback(callback, { error: 'Error al unirse a la solicitud' });
       }
@@ -127,7 +140,31 @@ function registerSockets(io) {
       }
     });
 
-    socket.on('disconnect', () => {});
+    // Indicador "escribiendo...": solo lo emiten los participantes y se reenvía al resto de la sala.
+    socket.on('chat:escribiendo', async ({ solicitudId, escribiendo } = {}) => {
+      const sala = `solicitud:${Number(solicitudId)}`;
+      if (!socket.rooms.has(sala) || rol === 'admin') return;
+      socket.to(sala).emit('chat:escribiendo', {
+        solicitudId: Number(solicitudId),
+        usuarioId: id,
+        nombre: socket.user.nombre,
+        rol,
+        escribiendo: Boolean(escribiendo),
+      });
+    });
+
+    // Al salir de la sala o desconectarse se apaga su indicador para los demás.
+    socket.on('disconnecting', () => {
+      for (const sala of socket.rooms) {
+        if (sala.startsWith('solicitud:')) {
+          socket.to(sala).emit('chat:escribiendo', {
+            solicitudId: Number(sala.split(':')[1]),
+            usuarioId: id,
+            escribiendo: false,
+          });
+        }
+      }
+    });
   });
 }
 
