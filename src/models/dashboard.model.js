@@ -1,33 +1,133 @@
 const pool = require('../config/db');
 
-async function obtenerResumen() {
-  const { rows } = await pool.query(`
-    SELECT
+// dias = 0 significa "todo el historial".
+const EN_RANGO = `($1::int = 0 OR s.creado_en >= now() - make_interval(days => $1::int))`;
+
+async function obtenerResumen(dias) {
+  const { rows } = await pool.query(
+    `SELECT
       COUNT(*) AS total_solicitudes,
-      COUNT(*) FILTER (WHERE aceptada_en IS NOT NULL) AS total_aceptadas,
-      COUNT(*) FILTER (WHERE estado = 'finalizada') AS total_finalizadas,
-      COUNT(*) FILTER (WHERE estado = 'cancelada') AS total_canceladas,
+      COUNT(*) FILTER (WHERE s.aceptada_en IS NOT NULL) AS total_aceptadas,
+      COUNT(*) FILTER (WHERE s.estado = 'finalizada') AS total_finalizadas,
+      COUNT(*) FILTER (WHERE s.estado = 'cancelada') AS total_canceladas,
+      COUNT(*) FILTER (WHERE s.programada_para IS NOT NULL) AS total_programadas,
+      COUNT(*) FILTER (WHERE s.modalidad = 'domicilio') AS total_domicilio,
+      COUNT(*) FILTER (WHERE s.modalidad = 'consultorio') AS total_consultorio,
       ROUND(
-        COUNT(*) FILTER (WHERE aceptada_en IS NOT NULL)::numeric
+        COUNT(*) FILTER (WHERE s.aceptada_en IS NOT NULL)::numeric
         / NULLIF(COUNT(*), 0) * 100, 1
       ) AS tasa_aceptacion_pct,
-      ROUND(AVG(EXTRACT(EPOCH FROM (aceptada_en - creado_en)))
-        FILTER (WHERE aceptada_en IS NOT NULL) / 60.0, 1) AS promedio_minutos_hasta_aceptacion,
-      ROUND(AVG(EXTRACT(EPOCH FROM (finalizado_en - creado_en)))
-        FILTER (WHERE finalizado_en IS NOT NULL) / 60.0, 1) AS promedio_minutos_atencion_total
-    FROM solicitudes_atencion
-  `);
-  return rows[0];
+      ROUND(AVG(EXTRACT(EPOCH FROM (s.aceptada_en - s.creado_en)))
+        FILTER (WHERE s.aceptada_en IS NOT NULL AND s.programada_para IS NULL) / 60.0, 1)
+        AS promedio_minutos_hasta_aceptacion,
+      ROUND(AVG(EXTRACT(EPOCH FROM (s.finalizado_en - COALESCE(s.programada_para, s.creado_en))))
+        FILTER (WHERE s.finalizado_en IS NOT NULL) / 60.0, 1) AS promedio_minutos_atencion_total,
+      ROUND(AVG(c.puntaje), 2) AS satisfaccion_promedio,
+      COUNT(c.id) AS total_calificaciones
+    FROM solicitudes_atencion s
+    LEFT JOIN calificaciones c ON c.solicitud_id = s.id
+    WHERE ${EN_RANGO}`,
+    [dias]
+  );
+  const { rows: ahora } = await pool.query(
+    `SELECT
+       COUNT(*) FILTER (WHERE estado = 'pendiente') AS pendientes_ahora,
+       COUNT(*) FILTER (WHERE estado IN ('aceptada', 'en_camino', 'en_atencion')) AS en_curso_ahora
+     FROM solicitudes_atencion`
+  );
+  let totalPeriodoAnterior = null;
+  if (dias > 0) {
+    const { rows: prev } = await pool.query(
+      `SELECT COUNT(*) AS total FROM solicitudes_atencion
+       WHERE creado_en >= now() - make_interval(days => $1::int * 2)
+         AND creado_en < now() - make_interval(days => $1::int)`,
+      [dias]
+    );
+    totalPeriodoAnterior = Number(prev[0].total);
+  }
+  return { ...rows[0], ...ahora[0], total_periodo_anterior: totalPeriodoAnterior };
 }
 
 async function obtenerSolicitudesPorDia(dias) {
   const { rows } = await pool.query(
-    `SELECT date_trunc('day', creado_en)::date AS dia, COUNT(*) AS total
-     FROM solicitudes_atencion
-     WHERE creado_en >= now() - ($1 || ' days')::interval
-     GROUP BY dia
-     ORDER BY dia`,
+    `SELECT to_char(date_trunc('day', s.creado_en), 'YYYY-MM-DD') AS dia,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE s.estado = 'finalizada') AS finalizadas
+     FROM solicitudes_atencion s
+     WHERE s.creado_en >= now() - make_interval(days => $1::int)
+     GROUP BY 1
+     ORDER BY 1`,
+    [dias > 0 ? dias : 365]
+  );
+  return rows;
+}
+
+async function obtenerPorTipo(dias) {
+  const { rows } = await pool.query(
+    `SELECT s.tipo_procedimiento AS tipo, COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE s.estado = 'finalizada') AS finalizadas
+     FROM solicitudes_atencion s
+     WHERE ${EN_RANGO}
+     GROUP BY 1
+     ORDER BY total DESC`,
     [dias]
+  );
+  return rows;
+}
+
+async function obtenerPorEstado(dias) {
+  const { rows } = await pool.query(
+    `SELECT s.estado, COUNT(*) AS total FROM solicitudes_atencion s WHERE ${EN_RANGO} GROUP BY 1`,
+    [dias]
+  );
+  return rows;
+}
+
+async function obtenerDesempenoMedicos(dias) {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.nombre, pm.especialidad, pm.disponible,
+            COUNT(s.id) FILTER (WHERE s.aceptada_en IS NOT NULL) AS aceptadas,
+            COUNT(s.id) FILTER (WHERE s.estado = 'finalizada') AS finalizadas,
+            ROUND(AVG(c.puntaje), 2) AS satisfaccion_promedio,
+            COUNT(c.id) AS calificaciones,
+            ROUND(AVG(EXTRACT(EPOCH FROM (s.finalizado_en - s.aceptada_en)))
+              FILTER (WHERE s.finalizado_en IS NOT NULL) / 60.0, 1) AS minutos_promedio_atencion
+     FROM perfiles_medicos pm
+     JOIN usuarios u ON u.id = pm.usuario_id
+     LEFT JOIN solicitudes_atencion s ON s.medico_id = u.id AND ${EN_RANGO}
+     LEFT JOIN calificaciones c ON c.solicitud_id = s.id
+     WHERE pm.verificado = true
+     GROUP BY u.id, u.nombre, pm.especialidad, pm.disponible
+     ORDER BY finalizadas DESC, satisfaccion_promedio DESC NULLS LAST`,
+    [dias]
+  );
+  return rows;
+}
+
+async function obtenerDistribucionCalificaciones(dias) {
+  const { rows } = await pool.query(
+    `SELECT g.puntaje, COUNT(c.id) AS total
+     FROM generate_series(1, 5) AS g(puntaje)
+     LEFT JOIN calificaciones c ON c.puntaje = g.puntaje
+       AND EXISTS (SELECT 1 FROM solicitudes_atencion s WHERE s.id = c.solicitud_id AND ${EN_RANGO})
+     GROUP BY g.puntaje
+     ORDER BY g.puntaje DESC`,
+    [dias]
+  );
+  return rows;
+}
+
+async function obtenerProximasCitas() {
+  const { rows } = await pool.query(
+    `SELECT s.id, s.tipo_procedimiento, s.modalidad, s.programada_para, s.estado,
+            p.nombre AS paciente_nombre, m.nombre AS medico_nombre
+     FROM solicitudes_atencion s
+     JOIN usuarios p ON p.id = s.paciente_id
+     LEFT JOIN usuarios m ON m.id = s.medico_id
+     WHERE s.programada_para >= now() - interval '1 hour'
+       AND s.estado IN ('pendiente', 'aceptada', 'en_camino', 'en_atencion')
+     ORDER BY s.programada_para ASC
+     LIMIT 8`
   );
   return rows;
 }
@@ -49,19 +149,22 @@ async function listarParaExportar({ desde, hasta }) {
   const params = [];
   if (desde) {
     params.push(desde);
-    condiciones.push(`creado_en >= $${params.length}`);
+    condiciones.push(`s.creado_en >= $${params.length}`);
   }
   if (hasta) {
     params.push(hasta);
-    condiciones.push(`creado_en <= $${params.length}`);
+    condiciones.push(`s.creado_en <= $${params.length}`);
   }
   const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
   const { rows } = await pool.query(
-    `SELECT id, paciente_id, medico_id, tipo_procedimiento, estado,
-            creado_en, aceptada_en, finalizado_en, cancelado_en
-     FROM solicitudes_atencion
+    `SELECT s.id, s.paciente_id, s.medico_id, m.nombre AS medico_nombre, s.tipo_procedimiento,
+            s.modalidad, s.programada_para, s.estado, s.creado_en, s.aceptada_en,
+            s.finalizado_en, s.cancelado_en, c.puntaje
+     FROM solicitudes_atencion s
+     LEFT JOIN usuarios m ON m.id = s.medico_id
+     LEFT JOIN calificaciones c ON c.solicitud_id = s.id
      ${where}
-     ORDER BY creado_en ASC`,
+     ORDER BY s.creado_en ASC`,
     params
   );
   return rows;
@@ -70,6 +173,11 @@ async function listarParaExportar({ desde, hasta }) {
 module.exports = {
   obtenerResumen,
   obtenerSolicitudesPorDia,
+  obtenerPorTipo,
+  obtenerPorEstado,
+  obtenerDesempenoMedicos,
+  obtenerDistribucionCalificaciones,
+  obtenerProximasCitas,
   obtenerResumenUsuarios,
   listarParaExportar,
 };

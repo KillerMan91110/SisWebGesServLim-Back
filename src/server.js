@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 
 const app = require('./app');
 const { registerSockets } = require('./sockets');
+const { programarRespaldos } = require('./services/respaldo.service');
 
 const server = http.createServer(app);
 
@@ -19,4 +20,5 @@ const PORT = process.env.PORT || 4000;
 
 server.listen(PORT, () => {
   console.log(`Servidor escuchando en http://localhost:${PORT}`);
+  programarRespaldos();
 });

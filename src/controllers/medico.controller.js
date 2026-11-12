@@ -42,4 +42,37 @@ async function actualizarDisponibilidad(req, res, next) {
   }
 }
 
-module.exports = { actualizarDisponibilidad, listarPublicos };
+async function obtenerPerfil(req, res, next) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio
+       FROM perfiles_medicos WHERE usuario_id = $1`,
+      [req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Perfil médico no encontrado' });
+    res.json({ perfil: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const consultorioSchema = z.object({
+  direccionConsultorio: z.string().trim().max(255),
+});
+
+async function actualizarConsultorio(req, res, next) {
+  try {
+    const { direccionConsultorio } = consultorioSchema.parse(req.body);
+    const { rows } = await pool.query(
+      `UPDATE perfiles_medicos SET direccion_consultorio = $1 WHERE usuario_id = $2
+       RETURNING usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio`,
+      [direccionConsultorio || null, req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Perfil médico no encontrado' });
+    res.json({ perfil: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { actualizarDisponibilidad, listarPublicos, obtenerPerfil, actualizarConsultorio };

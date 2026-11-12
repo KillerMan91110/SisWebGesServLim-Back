@@ -3,6 +3,8 @@ const perfilMedicoModel = require('../models/perfilMedico.model');
 const usuarioModel = require('../models/usuario.model');
 const dashboardModel = require('../models/dashboard.model');
 const { parseId } = require('../utils/parseId');
+const auditoriaModel = require('../models/auditoria.model');
+const respaldoService = require('../services/respaldo.service');
 
 async function listarMedicosPendientes(req, res, next) {
   try {
@@ -86,12 +88,38 @@ const dashboardQuerySchema = z.object({
 async function obtenerDashboard(req, res, next) {
   try {
     const { dias } = dashboardQuerySchema.parse(req.query);
-    const [resumen, solicitudesPorDia, usuarios] = await Promise.all([
-      dashboardModel.obtenerResumen(),
+    const [
+      resumen,
+      solicitudesPorDia,
+      usuarios,
+      porTipo,
+      porEstado,
+      medicos,
+      calificaciones,
+      proximasCitas,
+    ] = await Promise.all([
+      dashboardModel.obtenerResumen(dias),
       dashboardModel.obtenerSolicitudesPorDia(dias),
       dashboardModel.obtenerResumenUsuarios(),
+      dashboardModel.obtenerPorTipo(dias),
+      dashboardModel.obtenerPorEstado(dias),
+      dashboardModel.obtenerDesempenoMedicos(dias),
+      dashboardModel.obtenerDistribucionCalificaciones(dias),
+      dashboardModel.obtenerProximasCitas(),
     ]);
-    res.json({ resumen, solicitudesPorDia, usuarios });
+    const ultimoRespaldo = respaldoService.listarRespaldos()[0] || null;
+    res.json({
+      dias,
+      resumen,
+      solicitudesPorDia,
+      usuarios,
+      porTipo,
+      porEstado,
+      medicos,
+      calificaciones,
+      proximasCitas,
+      ultimoRespaldo,
+    });
   } catch (err) {
     next(err);
   }
@@ -131,12 +159,16 @@ async function exportarSolicitudesCsv(req, res, next) {
       'id',
       'paciente_id',
       'medico_id',
+      'medico_nombre',
       'tipo_procedimiento',
+      'modalidad',
+      'programada_para',
       'estado',
       'creado_en',
       'aceptada_en',
       'finalizado_en',
       'cancelado_en',
+      'puntaje',
     ];
     const lineas = [filaACsv(encabezado), ...filas.map((f) => filaACsv(encabezado.map((c) => f[c])))];
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -147,7 +179,57 @@ async function exportarSolicitudesCsv(req, res, next) {
   }
 }
 
+async function listarAuditoria(req, res, next) {
+  try {
+    const registros = await auditoriaModel.listar(100);
+    res.json({ registros });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listarRespaldos(req, res, next) {
+  try {
+    res.json({ respaldos: respaldoService.listarRespaldos() });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function crearRespaldo(req, res, next) {
+  try {
+    const respaldo = await respaldoService.crearRespaldo({ origen: 'manual' });
+    await auditoriaModel.registrar({
+      usuarioId: req.user.id,
+      accion: 'crear_respaldo',
+      detalle: respaldo.nombre,
+    });
+    res.status(201).json({ respaldo });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function descargarRespaldo(req, res, next) {
+  try {
+    const ruta = respaldoService.rutaDeRespaldo(req.params.nombre);
+    if (!ruta) return res.status(404).json({ error: 'Respaldo no encontrado' });
+    await auditoriaModel.registrar({
+      usuarioId: req.user.id,
+      accion: 'descargar_respaldo',
+      detalle: req.params.nombre,
+    });
+    res.download(ruta);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
+  listarAuditoria,
+  listarRespaldos,
+  crearRespaldo,
+  descargarRespaldo,
   listarMedicosPendientes,
   verificarMedico,
   rechazarMedico,

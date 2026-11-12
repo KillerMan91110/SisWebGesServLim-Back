@@ -1,13 +1,22 @@
 const pool = require('../config/db');
 const { withTransaction } = require('../utils/withTransaction');
 
-async function crear({ pacienteId, tipoProcedimiento, descripcion, lat, lng }) {
+async function crear({ pacienteId, tipoProcedimiento, descripcion, lat, lng, modalidad, programadaPara }) {
   return withTransaction(async (client) => {
     const { rows } = await client.query(
-      `INSERT INTO solicitudes_atencion (paciente_id, tipo_procedimiento, descripcion, lat, lng)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO solicitudes_atencion
+         (paciente_id, tipo_procedimiento, descripcion, lat, lng, modalidad, programada_para)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [pacienteId, tipoProcedimiento, descripcion || null, lat, lng]
+      [
+        pacienteId,
+        tipoProcedimiento,
+        descripcion || null,
+        lat,
+        lng,
+        modalidad || 'domicilio',
+        programadaPara || null,
+      ]
     );
     const solicitud = rows[0];
     await client.query(
@@ -24,11 +33,14 @@ async function findById(id) {
     `SELECT s.*,
             c.puntaje, c.comentario AS calificacion_comentario, c.creado_en AS calificado_en,
             p.nombre AS paciente_nombre,
-            m.nombre AS medico_nombre
+            m.nombre AS medico_nombre,
+            pm.especialidad AS medico_especialidad,
+            pm.direccion_consultorio AS medico_direccion_consultorio
      FROM solicitudes_atencion s
      LEFT JOIN calificaciones c ON c.solicitud_id = s.id
      LEFT JOIN usuarios p ON p.id = s.paciente_id
      LEFT JOIN usuarios m ON m.id = s.medico_id
+     LEFT JOIN perfiles_medicos pm ON pm.usuario_id = s.medico_id
      WHERE s.id = $1`,
     [id]
   );
@@ -37,8 +49,27 @@ async function findById(id) {
 
 async function listarPorPaciente(pacienteId) {
   const { rows } = await pool.query(
-    'SELECT * FROM solicitudes_atencion WHERE paciente_id = $1 ORDER BY creado_en DESC',
+    `SELECT s.*, m.nombre AS medico_nombre
+     FROM solicitudes_atencion s
+     LEFT JOIN usuarios m ON m.id = s.medico_id
+     WHERE s.paciente_id = $1
+     ORDER BY s.creado_en DESC`,
     [pacienteId]
+  );
+  return rows;
+}
+
+// Citas programadas del médico que aún no terminan (agenda), por fecha.
+async function listarAgendaMedico(medicoId) {
+  const { rows } = await pool.query(
+    `SELECT s.*, p.nombre AS paciente_nombre, p.telefono AS paciente_telefono
+     FROM solicitudes_atencion s
+     JOIN usuarios p ON p.id = s.paciente_id
+     WHERE s.medico_id = $1
+       AND s.programada_para IS NOT NULL
+       AND s.estado IN ('aceptada', 'en_camino', 'en_atencion')
+     ORDER BY s.programada_para ASC`,
+    [medicoId]
   );
   return rows;
 }
@@ -203,6 +234,7 @@ module.exports = {
   findById,
   listarPorPaciente,
   listarPorMedico,
+  listarAgendaMedico,
   listarCercanas,
   aceptar,
   cancelar,

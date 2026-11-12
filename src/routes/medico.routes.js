@@ -14,4 +14,12 @@ router.patch(
   medicoController.actualizarDisponibilidad
 );
 
+router.get('/medicos/perfil', authenticate, authorize('medico'), medicoController.obtenerPerfil);
+router.patch(
+  '/medicos/perfil/consultorio',
+  authenticate,
+  authorize('medico'),
+  medicoController.actualizarConsultorio
+);
+
 module.exports = router;

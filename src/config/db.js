@@ -1,4 +1,8 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Las columnas DATE (ej. fecha de nacimiento) se devuelven como 'YYYY-MM-DD' sin convertir
+// a Date, para que no se corran un día por la zona horaria.
+types.setTypeParser(1082, (valor) => valor);
 
 const pool = new Pool({
   host: process.env.DB_HOST,
