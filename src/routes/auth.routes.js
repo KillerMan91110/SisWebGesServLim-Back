@@ -5,10 +5,13 @@ const { authenticate } = require('../middleware/auth.middleware');
 
 const router = Router();
 
+// Protege contra fuerza bruta: solo cuentan los intentos FALLIDOS (contraseña incorrecta).
+// En desarrollo el límite es más alto para poder probar con varias cuentas.
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
-  message: { error: 'Demasiados intentos de login, probá de nuevo más tarde' },
+  max: process.env.NODE_ENV === 'production' ? 10 : 100,
+  skipSuccessfulRequests: true,
+  message: { error: 'Demasiados intentos fallidos de inicio de sesión. Espera 15 minutos e inténtalo de nuevo.' },
 });
 
 router.post('/auth/register/paciente', authController.registrarPaciente);
