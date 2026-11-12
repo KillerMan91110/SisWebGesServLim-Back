@@ -18,8 +18,8 @@ const { opcionesCors } = require('./config/cors');
 const app = express();
 
 // En Render la app está detrás de un proxy: así el límite de peticiones
-// usa la IP real del usuario y no la del proxy.
-if (process.env.TRUST_PROXY) {
+// usa la IP real del usuario y no la del proxy. Render define RENDER=true.
+if (process.env.TRUST_PROXY || process.env.RENDER) {
   app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 }
 
