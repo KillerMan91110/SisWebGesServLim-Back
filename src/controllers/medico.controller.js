@@ -36,6 +36,9 @@ async function actualizarDisponibilidad(req, res, next) {
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Perfil médico no encontrado' });
     }
+    // Los pacientes ven al instante a los médicos que se conectan o desconectan
+    const io = req.app.get('io');
+    if (io) io.to('pacientes').emit('medicos:disponibilidad', { medicoId: req.user.id, disponible });
     res.json({ perfil: rows[0] });
   } catch (err) {
     next(err);
@@ -46,7 +49,7 @@ async function obtenerPerfil(req, res, next) {
   try {
     const { rows } = await pool.query(
       `SELECT usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio,
-              lat_actual, lng_actual
+              consultorio_lat, consultorio_lng, lat_actual, lng_actual
        FROM perfiles_medicos WHERE usuario_id = $1`,
       [req.user.id]
     );
@@ -59,15 +62,23 @@ async function obtenerPerfil(req, res, next) {
 
 const consultorioSchema = z.object({
   direccionConsultorio: z.string().trim().max(255),
+  lat: z.number().min(-90).max(90).nullable().optional(),
+  lng: z.number().min(-180).max(180).nullable().optional(),
 });
 
 async function actualizarConsultorio(req, res, next) {
   try {
-    const { direccionConsultorio } = consultorioSchema.parse(req.body);
+    const { direccionConsultorio, lat, lng } = consultorioSchema.parse(req.body);
+    const conUbicacion = lat !== undefined && lng !== undefined;
     const { rows } = await pool.query(
-      `UPDATE perfiles_medicos SET direccion_consultorio = $1 WHERE usuario_id = $2
-       RETURNING usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio`,
-      [direccionConsultorio || null, req.user.id]
+      `UPDATE perfiles_medicos
+       SET direccion_consultorio = $1,
+           consultorio_lat = CASE WHEN $4 THEN $2::double precision ELSE consultorio_lat END,
+           consultorio_lng = CASE WHEN $4 THEN $3::double precision ELSE consultorio_lng END
+       WHERE usuario_id = $5
+       RETURNING usuario_id, cmp_colegiatura, especialidad, disponible, direccion_consultorio,
+                 consultorio_lat, consultorio_lng`,
+      [direccionConsultorio || null, lat ?? null, lng ?? null, conUbicacion, req.user.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Perfil médico no encontrado' });
     res.json({ perfil: rows[0] });

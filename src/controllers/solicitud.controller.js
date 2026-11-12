@@ -59,6 +59,7 @@ async function crear(req, res, next) {
     const solicitud = await solicitudModel.crear({ pacienteId: req.user.id, ...datos });
     const io = req.app.get('io');
     if (io) io.to('medicos').emit('solicitud:nueva', solicitud);
+    avisos.alNuevaSolicitud(solicitud);
     res.status(201).json({ solicitud });
   } catch (err) {
     next(err);

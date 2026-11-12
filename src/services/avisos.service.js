@@ -1,6 +1,14 @@
 // Avisos que el sistema envía en cada momento del ciclo de una solicitud.
 const solicitudModel = require('../models/solicitud.model');
 const { notificarSeguro, fechaLegible, lugar, procedimiento } = require('./notificacion.service');
+const perfilMedicoModel = require('../models/perfilMedico.model');
+
+const RADIO_AVISO_KM = Number(process.env.RADIO_AVISO_MEDICOS_KM) || 15;
+
+function km(metros) {
+  const m = Number(metros);
+  return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`;
+}
 
 async function completa(solicitudOId) {
   const id = typeof solicitudOId === 'object' ? solicitudOId.id : solicitudOId;
@@ -89,4 +97,60 @@ async function alCambiarEstado(solicitudOId, nuevoEstado) {
   }
 }
 
-module.exports = { alAceptar, alCancelarPorPaciente, alFinalizar, alCambiarEstado };
+// Nueva solicitud: aviso a los médicos verificados y en línea dentro del radio.
+async function alNuevaSolicitud(solicitud) {
+  try {
+    const cercanos = await perfilMedicoModel.listarCercanos({
+      lat: solicitud.lat,
+      lng: solicitud.lng,
+      radioMetros: RADIO_AVISO_KM * 1000,
+    });
+    const cuando = solicitud.programada_para
+      ? `cita para el ${fechaLegible(solicitud.programada_para)}`
+      : 'atención inmediata';
+    const donde = solicitud.modalidad === 'consultorio' ? 'en tu consultorio' : 'a domicilio';
+    for (const m of cercanos) {
+      await notificarSeguro({
+        usuarioId: m.id,
+        tipo: 'nueva_solicitud',
+        titulo: '🆕 Nueva solicitud cerca de ti',
+        mensaje: `${procedimiento(solicitud)} a ${km(m.distancia_metros)} · ${donde} · ${cuando}.`,
+        solicitudId: solicitud.id,
+      });
+    }
+  } catch (err) {
+    console.error('[avisos] nueva solicitud:', err.message);
+  }
+}
+
+// Consultorio: el paciente se dirige al consultorio o ya llegó (avisos al médico).
+async function alMovimientoPaciente(solicitudOId, nuevoEstado) {
+  const s = await completa(solicitudOId);
+  if (!s?.medico_id) return;
+  if (nuevoEstado === 'en_camino') {
+    await notificarSeguro({
+      usuarioId: s.medico_id,
+      tipo: 'paciente_en_camino',
+      titulo: '🚶 Paciente en camino',
+      mensaje: `${s.paciente_nombre} se dirige a tu consultorio (${procedimiento(s)}). Puedes seguirlo en el mapa.`,
+      solicitudId: s.id,
+    });
+  } else if (nuevoEstado === 'en_atencion') {
+    await notificarSeguro({
+      usuarioId: s.medico_id,
+      tipo: 'paciente_llego',
+      titulo: '🏥 Tu paciente llegó',
+      mensaje: `${s.paciente_nombre} llegó a tu consultorio.`,
+      solicitudId: s.id,
+    });
+    await notificarSeguro({
+      usuarioId: s.paciente_id,
+      tipo: 'en_atencion',
+      titulo: '🏥 Llegaste al consultorio',
+      mensaje: `${s.medico_nombre} fue avisado de tu llegada.`,
+      solicitudId: s.id,
+    });
+  }
+}
+
+module.exports = { alNuevaSolicitud, alMovimientoPaciente, alAceptar, alCancelarPorPaciente, alFinalizar, alCambiarEstado };

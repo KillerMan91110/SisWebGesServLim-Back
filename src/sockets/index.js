@@ -5,6 +5,11 @@ const mensajeModel = require('../models/mensaje.model');
 const { esParteDeSolicitud } = require('../utils/autorizacion');
 const avisos = require('../services/avisos.service');
 const auditoriaModel = require('../models/auditoria.model');
+const pool = require('../config/db');
+const { distanciaMetros } = require('../utils/distancia');
+
+// Última posición conocida del paciente que va al consultorio (en memoria, por solicitud)
+const ubicacionPaciente = new Map();
 
 const radioEnv = Number(process.env.RADIO_LLEGADA_METROS);
 const RADIO_LLEGADA_METROS = Number.isFinite(radioEnv) ? radioEnv : 50;
@@ -51,6 +56,9 @@ function registerSockets(io) {
     if (rol === 'medico') {
       socket.join('medicos');
     }
+    if (rol === 'paciente') {
+      socket.join('pacientes');
+    }
 
     // Une al socket a la sala de una solicitud puntual (tracking + chat).
     // Paciente y médico participan; el admin entra en modo supervisión (solo lectura) y queda auditado.
@@ -73,6 +81,26 @@ function registerSockets(io) {
             .catch(() => {});
         }
         safeCallback(callback, { ok: true, supervision: esAdmin && !esParteDeSolicitud(solicitud, id) });
+
+        // Al entrar (o recargar) se envía la última posición conocida para no ver el mapa vacío
+        if (solicitud.modalidad === 'consultorio') {
+          const ultima = ubicacionPaciente.get(solicitud.id);
+          if (ultima) socket.emit('ubicacion:paciente', { solicitudId: solicitud.id, ...ultima });
+        } else if (['en_camino', 'en_atencion'].includes(solicitud.estado) && solicitud.medico_id) {
+          const { rows } = await pool.query(
+            'SELECT lat_actual, lng_actual FROM perfiles_medicos WHERE usuario_id = $1',
+            [solicitud.medico_id]
+          );
+          const p = rows[0];
+          if (p?.lat_actual != null) {
+            socket.emit('ubicacion:medico', {
+              solicitudId: solicitud.id,
+              lat: p.lat_actual,
+              lng: p.lng_actual,
+              distanciaMetros: Math.round(distanciaMetros(p.lat_actual, p.lng_actual, solicitud.lat, solicitud.lng)),
+            });
+          }
+        }
       } catch (err) {
         safeCallback(callback, { error: 'Error al unirse a la solicitud' });
       }
@@ -110,6 +138,54 @@ function registerSockets(io) {
         safeCallback(callback, { ok: true, distanciaMetros: Math.round(distancia), estado: solicitud.estado });
       } catch (err) {
         safeCallback(callback, { error: 'Error al actualizar ubicación' });
+      }
+    });
+
+    // Consultorio: el paciente comparte su ubicación mientras va hacia el consultorio
+    socket.on('ubicacion:paciente', async ({ solicitudId, lat, lng } = {}, callback) => {
+      try {
+        if (rol !== 'paciente') return safeCallback(callback, { error: 'Solo el paciente envía esta ubicación' });
+        if (![lat, lng].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+          return safeCallback(callback, { error: 'Ubicación inválida' });
+        }
+        const solicitud = await solicitudModel.findById(Number(solicitudId));
+        if (
+          !solicitud ||
+          solicitud.paciente_id !== id ||
+          solicitud.modalidad !== 'consultorio' ||
+          !['aceptada', 'en_camino'].includes(solicitud.estado)
+        ) {
+          return safeCallback(callback, { error: 'Solicitud no válida para compartir ubicación' });
+        }
+        const destino =
+          solicitud.medico_consultorio_lat != null
+            ? { lat: solicitud.medico_consultorio_lat, lng: solicitud.medico_consultorio_lng }
+            : null;
+        const distancia = destino ? Math.round(distanciaMetros(lat, lng, destino.lat, destino.lng)) : null;
+        const posicion = { lat, lng, distanciaMetros: distancia, en: new Date().toISOString() };
+        ubicacionPaciente.set(solicitud.id, posicion);
+        io.to(`solicitud:${solicitud.id}`).emit('ubicacion:paciente', { solicitudId: solicitud.id, ...posicion });
+
+        // Primer movimiento: en camino. Dentro del radio de llegada: en atención.
+        let nuevo = null;
+        if (distancia !== null && distancia <= RADIO_LLEGADA_METROS) {
+          nuevo = await solicitudModel.cambiarEstadoPorPaciente({
+            solicitudId: solicitud.id, pacienteId: id, de: solicitud.estado, a: 'en_atencion',
+          });
+        } else if (solicitud.estado === 'aceptada') {
+          nuevo = await solicitudModel.cambiarEstadoPorPaciente({
+            solicitudId: solicitud.id, pacienteId: id, de: 'aceptada', a: 'en_camino',
+          });
+        }
+        if (nuevo) {
+          if (nuevo.estado === 'en_atencion') ubicacionPaciente.delete(solicitud.id);
+          io.to(`solicitud:${solicitud.id}`).emit('solicitud:actualizada', nuevo);
+          io.to(`user:${solicitud.medico_id}`).emit('solicitud:actualizada', nuevo);
+          avisos.alMovimientoPaciente(nuevo, nuevo.estado);
+        }
+        safeCallback(callback, { ok: true, distanciaMetros: distancia, estado: nuevo?.estado ?? solicitud.estado });
+      } catch (err) {
+        safeCallback(callback, { error: 'Error al actualizar la ubicación' });
       }
     });
 

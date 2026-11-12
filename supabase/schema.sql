@@ -222,6 +222,16 @@ ALTER TABLE usuarios
 INSERT INTO schema_migrations (nombre) VALUES ('004_consentimiento.sql') ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------
+-- 005_ubicacion_consultorio.sql
+-- ---------------------------------------------------------------------
+-- Ubicación del consultorio en el mapa (para trazar la ruta del paciente hasta él).
+ALTER TABLE perfiles_medicos
+    ADD COLUMN consultorio_lat DOUBLE PRECISION,
+    ADD COLUMN consultorio_lng DOUBLE PRECISION;
+
+INSERT INTO schema_migrations (nombre) VALUES ('005_ubicacion_consultorio.sql') ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------
 -- Seguridad en Supabase
 -- Supabase expone el esquema "public" por su API REST (anon / authenticated).
 -- Se activa Row Level Security SIN políticas: la API pública no puede leer ni

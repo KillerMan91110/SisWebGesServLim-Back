@@ -35,7 +35,9 @@ async function findById(id) {
             p.nombre AS paciente_nombre,
             m.nombre AS medico_nombre,
             pm.especialidad AS medico_especialidad,
-            pm.direccion_consultorio AS medico_direccion_consultorio
+            pm.direccion_consultorio AS medico_direccion_consultorio,
+            pm.consultorio_lat AS medico_consultorio_lat,
+            pm.consultorio_lng AS medico_consultorio_lng
      FROM solicitudes_atencion s
      LEFT JOIN calificaciones c ON c.solicitud_id = s.id
      LEFT JOIN usuarios p ON p.id = s.paciente_id
@@ -254,7 +256,27 @@ async function registrarLlegadaConsultorio({ solicitudId, medicoId }) {
   });
 }
 
+// El paciente que va al consultorio cambia el estado (aceptada -> en_camino -> en_atencion).
+async function cambiarEstadoPorPaciente({ solicitudId, pacienteId, de, a }) {
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      `UPDATE solicitudes_atencion SET estado = $4
+       WHERE id = $1 AND paciente_id = $2 AND modalidad = 'consultorio' AND estado = $3
+       RETURNING *`,
+      [solicitudId, pacienteId, de, a]
+    );
+    if (rows.length === 0) return null;
+    await client.query(
+      `INSERT INTO historial_estados_solicitud (solicitud_id, estado_anterior, estado_nuevo, cambiado_por)
+       VALUES ($1, $2, $3, $4)`,
+      [solicitudId, de, a, pacienteId]
+    );
+    return rows[0];
+  });
+}
+
 module.exports = {
+  cambiarEstadoPorPaciente,
   registrarLlegadaConsultorio,
   crear,
   findById,
