@@ -90,7 +90,8 @@ async function obtenerDesempenoMedicos(dias) {
             COUNT(s.id) FILTER (WHERE s.estado = 'finalizada') AS finalizadas,
             ROUND(AVG(c.puntaje), 2) AS satisfaccion_promedio,
             COUNT(c.id) AS calificaciones,
-            ROUND(AVG(EXTRACT(EPOCH FROM (s.finalizado_en - s.aceptada_en)))
+            -- En citas programadas se mide desde la hora de la cita, no desde que se aceptó (días antes)
+            ROUND(AVG(EXTRACT(EPOCH FROM (s.finalizado_en - COALESCE(s.programada_para, s.aceptada_en))))
               FILTER (WHERE s.finalizado_en IS NOT NULL) / 60.0, 1) AS minutos_promedio_atencion
      FROM perfiles_medicos pm
      JOIN usuarios u ON u.id = pm.usuario_id
