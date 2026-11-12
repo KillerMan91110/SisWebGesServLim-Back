@@ -27,8 +27,12 @@ const loginSchema = z.object({
 });
 
 function firmarToken(usuario) {
+  if (!process.env.JWT_SECRET) {
+    throw Object.assign(new Error('JWT_SECRET no está configurado en el servidor'), { status: 500 });
+  }
   return jwt.sign({ id: usuario.id, rol: usuario.rol }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+    // Si la variable no está definida, la sesión dura 7 días
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 }
 
